@@ -152,16 +152,16 @@ depends on what "interpretable" means in your domain and the structure of your d
 | **Insurance pricing** | Filed relativities; regulator-auditable linear tariff | **GeoLinear** |
 | **Credit risk / scoring** | Scorecard linearity; SR 11-7 model risk compliance | **GeoLinear** |
 | **Utility rate-setting** | Filed tariff schedules with linear rate factors | **GeoLinear** |
-| **Healthcare / clinical** | XGBoost-level performance with auditable predictions | GeoXGB |
-| **Ecology / environmental** | Nonlinear regime detection; SHAP-compatible explanations | GeoXGB |
+| **Healthcare / clinical** | XGBoost-level performance with fully deterministic, auditable predictions | GeoXGB |
+| **Ecology / environmental** | Nonlinear regime detection; richer explanation than SHAP via 100% determinism | GeoXGB |
 | **Public policy** | Algorithmic accountability without linearity constraints | GeoXGB |
 | **Personalised interventions** | Per-entity longitudinal data; individual treatment trajectories | AutoITE |
 
 **Rule of thumb:** if your regulator or ethics board requires a *linear equation you can
-file or defend*, use GeoLinear. If you need XGBoost-class accuracy with an interpretable
-audit trail but no linearity constraint, use GeoXGB. If you have repeated observations
-per individual and want to model how treatment effects evolve over time for each entity,
-use AutoITE.
+file or defend*, use GeoLinear. If you need XGBoost-class accuracy with fully deterministic
+predictions that provide richer interpretability than SHAP, use GeoXGB. If you have repeated
+observations per individual and want to model how treatment effects evolve over time for each
+entity, use AutoITE.
 
 ---
 
