@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyd
+*.so
+*.egg-info/
+dist/
+build/
+*.whl
+*.tar.gz
+.eggs/
+
+# scikit-build / CMake
+_skbuild/
+_cmake_test_compile/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDEs
+.vscode/
+.idea/
+.vs/
+
+# Claude
+.claude/

@@ -1,0 +1,47 @@
+[build-system]
+requires = ["scikit-build-core>=0.9", "pybind11>=2.12"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "geolinear"
+version = "0.1.0"
+description = "Boosted linear models on HVRT cooperative geometry partitions"
+readme = "README.md"
+license = "AGPL-3.0-or-later"
+license-files = ["LICENSE"]
+requires-python = ">=3.10"
+authors = [{ name = "Jake Peace" }]
+keywords = [
+    "cooperative geometry",
+    "actuarial",
+    "insurance pricing",
+    "boosting",
+    "piecewise linear",
+    "interpretable machine learning",
+    "glm",
+    "ridge regression",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Financial and Insurance Industry",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: C++",
+]
+dependencies = [
+    "numpy",
+    "scikit-learn",
+    "scipy",
+]
+
+[project.optional-dependencies]
+dev      = ["pytest", "pytest-cov"]
+examples = ["xgboost", "optuna", "matplotlib"]
+
+[project.urls]
+
+[tool.scikit-build]
+cmake.build-type = "Release"
+wheel.packages   = ["src/geolinear"]
+# The compiled extension installs into geolinear/ via CMakeLists install()
