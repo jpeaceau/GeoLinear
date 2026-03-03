@@ -38,6 +38,10 @@ struct GeoLinearConfig {
     // 0 = disabled (new HVRT per round). k > 0 = refit every k rounds.
     int    refit_interval          = 0;
 
+    // HVRT model variant: "hvrt" (default) | "hart" | "fast_hvrt" | "fast_hart" | "pyramid_hart"
+    // Controls geometry_mode, whitening_mode, and split_criterion of the HVRT partitioner.
+    std::string hvrt_model         = "hvrt";
+
     // Misc
     int    random_state            = 42;
 };

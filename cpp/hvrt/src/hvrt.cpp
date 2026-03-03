@@ -49,7 +49,7 @@ HVRT& HVRT::fit(
 
     // 1. Whitener: all columns treated as continuous (no categorical path).
     //    Categorical encoding is the caller's responsibility.
-    whitener_.fit(X, std::vector<bool>(d, false));
+    whitener_.fit(X, std::vector<bool>(d, false), cfg_.whitening_mode);
     X_z_ = whitener_.transform(X);
 
     // 2. Detect binary columns (≤2 unique values post-whitening) via a quick
@@ -80,10 +80,17 @@ HVRT& HVRT::fit(
 
     // 3. Target computation
     Eigen::VectorXd target_vec;
-    if (d <= 50) {
-        target_vec = compute_pairwise_target(X_z_);
-    } else {
-        target_vec = compute_sum_target(X_z_);
+    switch (cfg_.geometry_mode) {
+        case GeometryMode::A:
+            target_vec = compute_a_target(X_z_);
+            break;
+        case GeometryMode::S:
+            target_vec = compute_sum_target(X_z_);
+            break;
+        default:  // GeometryMode::T
+            target_vec = (d <= 50) ? compute_pairwise_target(X_z_)
+                                   : compute_sum_target(X_z_);
+            break;
     }
 
     // ── Populate refit cache ───────────────────────────────────────────────────

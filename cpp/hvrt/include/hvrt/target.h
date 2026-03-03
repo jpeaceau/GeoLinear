@@ -15,6 +15,10 @@ Eigen::VectorXd compute_pairwise_target(const Eigen::MatrixXd& X_z);
 // Computes z-score of each row sum.
 Eigen::VectorXd compute_sum_target(const Eigen::MatrixXd& X_z);
 
+// ℓ₁ cooperation target: A = |Σz| − Σ|z|, always ≤ 0, then z-scored.
+// Degree-1 homogeneous, outlier-immune, bounded in [−r√d, 0].
+Eigen::VectorXd compute_a_target(const Eigen::MatrixXd& X_z);
+
 // Blend X-derived composite target with external y.
 // y_component = zscore(|y_norm - median(y_norm)|)
 // result = zscore(x_comp * (1-y_weight) + y_comp * y_weight)   [conceptually]

@@ -74,6 +74,16 @@ class GeoLinear(BaseEstimator, RegressorMixin):
         Target number of HVRT partitions. None = HVRT auto-tune.
     hvrt_min_samples_leaf : int or None, default=None
         Minimum samples per HVRT partition tree leaf. None = HVRT auto-tune.
+    hvrt_model : str, default="pyramid_hart"
+        HVRT variant controlling geometry, whitening, and split criterion:
+
+        - ``"pyramid_hart"`` A-statistic (|S|−‖z‖₁) + MAD whitening +
+          AbsoluteError splits.  Most robust; recommended for insurance/actuarial
+          use where claims data is heavy-tailed and MAE is the natural loss.
+        - ``"hvrt"``        T-statistic (S²−Q) + variance whitening (original).
+        - ``"hart"``        T-statistic + MAD whitening + AbsoluteError splits.
+        - ``"fast_hvrt"``   S-statistic + variance whitening (fastest).
+        - ``"fast_hart"``   S-statistic + MAD whitening + AbsoluteError splits.
     random_state : int, default=42
         Random seed. Incremented per round to ensure diverse partitionings.
 
@@ -82,7 +92,9 @@ class GeoLinear(BaseEstimator, RegressorMixin):
     intercept_ : float
         Mean of training y (initial prediction).
     stages_ : list of (None, dict[int, _RidgeModelView])
-        One entry per boosting stage.
+        One entry per boosting stage.  Each partition's Ridge model carries
+        explicit coefficients (actuarial relativities) inspectable via
+        ``stages_[i][1][partition_id].coef_``.
     n_features_in_ : int
         Number of features seen at fit time.
     """
@@ -100,6 +112,7 @@ class GeoLinear(BaseEstimator, RegressorMixin):
         hvrt_inner_rounds:      int   = 1,
         partition_inner_rounds: int   = 1,
         refit_interval:         int   = 0,
+        hvrt_model:             str   = "pyramid_hart",
         random_state:           int   = 42,
     ):
         self.n_rounds               = n_rounds
@@ -113,6 +126,7 @@ class GeoLinear(BaseEstimator, RegressorMixin):
         self.hvrt_inner_rounds      = hvrt_inner_rounds
         self.partition_inner_rounds = partition_inner_rounds
         self.refit_interval         = refit_interval
+        self.hvrt_model             = hvrt_model
         self.random_state           = random_state
 
     # ── Internal ──────────────────────────────────────────────────────────────
@@ -130,6 +144,7 @@ class GeoLinear(BaseEstimator, RegressorMixin):
         cfg.hvrt_inner_rounds      = int(self.hvrt_inner_rounds)
         cfg.partition_inner_rounds = int(self.partition_inner_rounds)
         cfg.refit_interval         = int(self.refit_interval)
+        cfg.hvrt_model             = str(self.hvrt_model)
         cfg.random_state           = int(self.random_state)
         return cfg
 
@@ -250,6 +265,8 @@ class GeoLinearClassifier(BaseEstimator, ClassifierMixin):
     min_samples_partition : int, default=5
     hvrt_n_partitions : int or None, default=None
     hvrt_min_samples_leaf : int or None, default=None
+    hvrt_model : str, default="pyramid_hart"
+        HVRT variant — see GeoLinear for full description.
     random_state : int, default=42
 
     Attributes
@@ -272,6 +289,7 @@ class GeoLinearClassifier(BaseEstimator, ClassifierMixin):
         hvrt_inner_rounds:      int   = 1,
         partition_inner_rounds: int   = 1,
         refit_interval:         int   = 0,
+        hvrt_model:             str   = "pyramid_hart",
         random_state:           int   = 42,
     ):
         self.n_rounds               = n_rounds
@@ -285,6 +303,7 @@ class GeoLinearClassifier(BaseEstimator, ClassifierMixin):
         self.hvrt_inner_rounds      = hvrt_inner_rounds
         self.partition_inner_rounds = partition_inner_rounds
         self.refit_interval         = refit_interval
+        self.hvrt_model             = hvrt_model
         self.random_state           = random_state
 
     def _make_config(self) -> GeoLinearConfig:
@@ -300,6 +319,7 @@ class GeoLinearClassifier(BaseEstimator, ClassifierMixin):
         cfg.hvrt_inner_rounds      = int(self.hvrt_inner_rounds)
         cfg.partition_inner_rounds = int(self.partition_inner_rounds)
         cfg.refit_interval         = int(self.refit_interval)
+        cfg.hvrt_model             = str(self.hvrt_model)
         cfg.random_state           = int(self.random_state)
         return cfg
 

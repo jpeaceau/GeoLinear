@@ -72,13 +72,15 @@ private:
         const Eigen::VectorXd& target,
         const std::vector<Eigen::VectorXd>& bin_edges,
         int n_bins,
-        int min_samples_leaf) const;
+        int min_samples_leaf,
+        const HVRTConfig& cfg) const;
 
     SplitResult evaluate_binary_splits(
         const std::vector<int>& indices,
         const Eigen::MatrixXd& X_z,
         const std::vector<int>& binary_cols,
-        const Eigen::VectorXd& target) const;
+        const Eigen::VectorXd& target,
+        const HVRTConfig& cfg) const;
 
     // ── State ─────────────────────────────────────────────────────────────────
     std::vector<TreeNode> nodes_;

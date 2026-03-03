@@ -4,7 +4,7 @@ build-backend = "scikit_build_core.build"
 
 [project]
 name = "geolinear"
-version = "0.1.0"
+version = "0.2.0"
 description = "Boosted linear models on HVRT cooperative geometry partitions"
 readme = "README.md"
 license = "AGPL-3.0-or-later"

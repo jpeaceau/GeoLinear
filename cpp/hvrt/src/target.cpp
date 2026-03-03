@@ -51,6 +51,13 @@ Eigen::VectorXd compute_sum_target(const Eigen::MatrixXd& X_z) {
     return zscore(X_z.rowwise().sum());
 }
 
+Eigen::VectorXd compute_a_target(const Eigen::MatrixXd& X_z) {
+    // A_i = |Σ_j z_ij| − Σ_j |z_ij|   (always ≤ 0)
+    Eigen::VectorXd A = X_z.rowwise().sum().cwiseAbs()
+                      - X_z.cwiseAbs().rowwise().sum();
+    return zscore(A);
+}
+
 Eigen::VectorXd blend_target(const Eigen::VectorXd& x_comp,
                               const Eigen::VectorXd& y,
                               double y_weight) {

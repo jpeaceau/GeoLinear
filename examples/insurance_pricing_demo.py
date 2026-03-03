@@ -1,15 +1,32 @@
 """
-Insurance Pricing Demo -- GeoLinear
-===================================
+Insurance Pricing Demo -- GeoLinear with PyramidHART
+=====================================================
 Demonstrates GeoLinear's actuarial value proposition on a synthetic portfolio:
 
   1. Data generation   -- 5 000 policyholders, T-regime DGP (regime-switching betas)
   2. GLM baseline      -- Ridge GLM on log(y); R2 + Gini
-  3. GeoLinear models  -- GL-Ridge / GL-OLS / GL-Lasso; R2 + Gini vs GLM
+  3. GeoLinear models  -- GL-Ridge / GL-OLS / GL-Lasso (default: pyramid_hart)
   4. HPO               -- 30-trial Optuna search
   5. Regulatory bridge -- OLS meta-model on GL-HPO predictions; compression loss
   6. Relativities table-- per-partition coefficients from stage 0
   7. Feature importances-- weighted mean |coef| across all stages
+
+Architecture note (pyramid_hart default):
+  GeoLinear partitions the policyholder space using PyramidHART cooperative
+  geometry, then fits a separate Ridge linear model within each partition.
+  The end result is a collection of ordinary linear models -- one per risk
+  regime -- each with fully interpretable coefficients (relativities).
+
+  PyramidHART advantages for insurance/actuarial use:
+  - MAD whitening: robust to extreme claims and outlier exposure values
+  - AbsoluteError splits: tree criterion aligned with MAE, the natural
+    actuarial loss (premium = E[loss], so |error| matters more than error^2)
+  - A-statistic geometry: outlier-immune cooperation signal (bounded, degree-1)
+
+  Regulatory readiness:
+  - Every partition's Ridge model is a standard GLM: coef_ = relativities
+  - An OLS meta-model (section 5) compresses the ensemble to a single filed GLM
+  - GeoLinear discovers the risk regimes; the actuary files the linear model
 
 Requirements: pip install geolinear[examples]
   i.e. xgboost, optuna, matplotlib are needed for section 4 / comparison plots.
@@ -165,7 +182,10 @@ print_row("Ridge GLM (log scale)", r2_glm, gini_glm)
 # 3.  GeoLinear variants (default hyperparameters)
 # -----------------------------------------------------------------------------
 
-print_header("3. GeoLinear -- Default Hyperparameters")
+print_header("3. GeoLinear -- Default Hyperparameters (hvrt_model='pyramid_hart')")
+print("  Each model = PyramidHART cooperative geometry partitions +")
+print("  one Ridge linear model per partition (interpretable relativities)")
+print()
 
 VARIANTS = [
     ("GL-Ridge", GeoLinear(base_learner="ridge", alpha=1.0)),
@@ -275,7 +295,10 @@ print(f"  {'intercept':<22}  {meta_glm.intercept_:+.4f}")
 # "Cooperative" if the mean T for members is positive, "Competitive" otherwise.
 # -----------------------------------------------------------------------------
 
-print_header("6. Stage-0 Partition Relativities")
+print_header("6. Stage-0 Partition Relativities (linear models per risk regime)")
+print("  Each partition is a cooperative geometry risk group discovered by PyramidHART.")
+print("  coef_ values are the log-scale relativities for that risk regime.")
+print()
 
 _, stage0_models = gl_hpo.stages_[0]
 n_partitions = len(stage0_models)
@@ -356,7 +379,11 @@ for label, r2_val, gini_val in results:
 
 print()
 print("  Key takeaways:")
-print("  * GeoLinear captures regime-switching that a global GLM cannot.")
+print("  * GeoLinear (pyramid_hart) captures regime-switching a global GLM cannot.")
+print("  * The output is a collection of standard Ridge linear models -- one per")
+print("    risk regime -- with fully auditable coefficients (relativities).")
+print("  * PyramidHART's MAD whitening and AbsoluteError splits are robust to")
+print("    heavy-tailed claims and align with the actuarial MAE loss objective.")
 print("  * The OLS meta-GLM compresses the ensemble with minimal accuracy loss,")
 print("    providing a regulator-ready filed model.")
 print("  * Feature importances reflect the true DGP: driver age and mileage")

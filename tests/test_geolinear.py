@@ -285,3 +285,59 @@ class TestSklearnCompat:
         model.set_params(n_rounds=8, alpha=3.0)
         assert model.n_rounds == 8
         assert model.alpha == 3.0
+
+
+# ── PyramidHART smoke tests ───────────────────────────────────────────────────
+
+class TestPyramidHART:
+    MODELS = ["hvrt", "hart", "fast_hvrt", "fast_hart", "pyramid_hart"]
+
+    @pytest.fixture(scope="class")
+    def small_data(self):
+        rng = np.random.default_rng(7)
+        X = rng.standard_normal((200, 5))
+        y = X[:, 0] + X[:, 1] * X[:, 2] + rng.standard_normal(200) * 0.1
+        return X, y
+
+    @pytest.mark.parametrize("model_name", MODELS)
+    def test_fit_predict(self, small_data, model_name):
+        X, y = small_data
+        gl = GeoLinear(n_rounds=5, hvrt_model=model_name, random_state=0)
+        gl.fit(X, y)
+        pred = gl.predict(X)
+        assert pred.shape == (len(y),)
+
+    @pytest.mark.parametrize("model_name", MODELS)
+    def test_r2_positive(self, small_data, model_name):
+        X, y = small_data
+        gl = GeoLinear(n_rounds=10, hvrt_model=model_name, random_state=0)
+        gl.fit(X, y)
+        r2 = gl.score(X, y)
+        assert r2 > 0.0, f"hvrt_model={model_name!r}: R²={r2:.3f} not positive"
+
+    def test_default_model_unchanged(self, small_data):
+        """Default hvrt_model must be 'pyramid_hart' and produce the same result."""
+        X, y = small_data
+        gl_default = GeoLinear(n_rounds=5, random_state=0)
+        gl_explicit = GeoLinear(n_rounds=5, hvrt_model="pyramid_hart", random_state=0)
+        assert gl_default.hvrt_model == "pyramid_hart"
+        gl_default.fit(X, y)
+        gl_explicit.fit(X, y)
+        np.testing.assert_allclose(
+            gl_default.predict(X), gl_explicit.predict(X), atol=1e-10,
+            err_msg="Default hvrt_model must equal explicit 'pyramid_hart'"
+        )
+
+    def test_pyramid_hart_classifier(self):
+        X, y = make_classification(n_samples=200, n_features=5, random_state=1)
+        clf = GeoLinearClassifier(n_rounds=5, hvrt_model="pyramid_hart", random_state=0)
+        clf.fit(X, y)
+        proba = clf.predict_proba(X)
+        assert proba.shape == (len(y), 2)
+        assert (proba >= 0).all() and (proba <= 1).all()
+
+    def test_clone_preserves_hvrt_model(self):
+        from sklearn.base import clone
+        model = GeoLinear(n_rounds=3, hvrt_model="pyramid_hart")
+        cloned = clone(model)
+        assert cloned.hvrt_model == "pyramid_hart"

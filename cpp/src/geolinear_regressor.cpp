@@ -113,6 +113,31 @@ hvrt::HVRTConfig GeoLinearBase::make_hvrt_config(int seed_offset) const {
         hcfg.auto_tune    = false;
     }
 
+    // Map hvrt_model string → geometry_mode, whitening_mode, split_criterion
+    const std::string& m = cfg_.hvrt_model;
+    if (m == "pyramid_hart") {
+        hcfg.geometry_mode   = hvrt::GeometryMode::A;
+        hcfg.whitening_mode  = hvrt::WhiteningMode::MAD;
+        hcfg.split_criterion = hvrt::SplitCriterion::AbsoluteError;
+    } else if (m == "hart") {
+        hcfg.geometry_mode   = hvrt::GeometryMode::T;
+        hcfg.whitening_mode  = hvrt::WhiteningMode::MAD;
+        hcfg.split_criterion = hvrt::SplitCriterion::AbsoluteError;
+    } else if (m == "fast_hvrt") {
+        hcfg.geometry_mode   = hvrt::GeometryMode::S;
+        hcfg.whitening_mode  = hvrt::WhiteningMode::Variance;
+        hcfg.split_criterion = hvrt::SplitCriterion::Variance;
+    } else if (m == "fast_hart") {
+        hcfg.geometry_mode   = hvrt::GeometryMode::S;
+        hcfg.whitening_mode  = hvrt::WhiteningMode::MAD;
+        hcfg.split_criterion = hvrt::SplitCriterion::AbsoluteError;
+    } else {
+        // default: "hvrt" — existing behavior unchanged
+        hcfg.geometry_mode   = hvrt::GeometryMode::T;
+        hcfg.whitening_mode  = hvrt::WhiteningMode::Variance;
+        hcfg.split_criterion = hvrt::SplitCriterion::Variance;
+    }
+
     return hcfg;
 }
 

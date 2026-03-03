@@ -46,6 +46,61 @@ static double variance_gain(double sum_p, double sum_sq_p, int n_p,
     return gain;
 }
 
+// ── MAE helpers for AbsoluteError criterion ───────────────────────────────────
+
+// Compute total absolute deviation from the median using a target-bin histogram.
+// tbin[tb] = count of samples in bin tb. n_total = total samples.
+static double mae_from_bins(const std::vector<int>& tbin, int n_total, int n_tbins) {
+    if (n_total == 0) return 0.0;
+    // Find median bin: smallest tb where cumulative count >= (n_total+1)/2
+    int med_bin = n_tbins - 1;
+    {
+        int cum = 0;
+        int half = (n_total + 1) / 2;
+        for (int tb = 0; tb < n_tbins; ++tb) {
+            cum += tbin[tb];
+            if (cum >= half) { med_bin = tb; break; }
+        }
+    }
+    double mae = 0.0;
+    for (int tb = 0; tb < n_tbins; ++tb)
+        mae += std::abs(tb - med_bin) * tbin[tb];
+    return mae;
+}
+
+// Approximate MAE gain = parent_mae - mae_left - mae_right (in bin units).
+// tbin_left[tb] = count of left-group samples in target bin tb.
+// tbin_total[tb] = count of ALL node samples in target bin tb.
+static double mae_gain(const std::vector<int>& tbin_left,
+                        const std::vector<int>& tbin_total,
+                        int n_left, int n_node, int n_tbins,
+                        double parent_mae) {
+    if (n_left <= 0 || n_left >= n_node) return 0.0;
+    int n_right = n_node - n_left;
+
+    double mae_left = mae_from_bins(tbin_left, n_left, n_tbins);
+
+    // Derive right group bins
+    std::vector<int> tbin_right(n_tbins);
+    for (int tb = 0; tb < n_tbins; ++tb)
+        tbin_right[tb] = tbin_total[tb] - tbin_left[tb];
+
+    double mae_right = mae_from_bins(tbin_right, n_right, n_tbins);
+
+    return parent_mae - mae_left - mae_right;
+}
+
+// Exact total MAE for a small list of values (sort + median by nth_element).
+static double exact_total_mae(std::vector<double> vals) {
+    int n = static_cast<int>(vals.size());
+    if (n == 0) return 0.0;
+    std::nth_element(vals.begin(), vals.begin() + n / 2, vals.end());
+    double med = vals[n / 2];
+    double mae = 0.0;
+    for (double v : vals) mae += std::abs(v - med);
+    return mae;
+}
+
 // ── Continuous split evaluation ───────────────────────────────────────────────
 //
 // Two-stage algorithm:
@@ -62,7 +117,8 @@ PartitionTree::SplitResult PartitionTree::evaluate_continuous_splits(
     const Eigen::VectorXd& target,
     const std::vector<Eigen::VectorXd>& bin_edges,
     int n_bins,
-    int min_samples_leaf) const
+    int min_samples_leaf,
+    const HVRTConfig& cfg) const
 {
     const int n_node = static_cast<int>(indices.size());
     const int d_cont = static_cast<int>(cont_cols.size());
@@ -75,13 +131,89 @@ PartitionTree::SplitResult PartitionTree::evaluate_continuous_splits(
 
     if (d_cont == 0) return best;
 
+    const int stride = static_cast<int>(X_binned.cols()); // == d_cont (RowMajor)
+
+    // ── AbsoluteError criterion: double-histogram ─────────────────────────────
+    if (cfg.split_criterion == SplitCriterion::AbsoluteError) {
+        static constexpr int n_tbins = 32;
+
+        // Compute target range for this node
+        double t_min = target[indices[0]], t_max = t_min;
+        for (int si = 1; si < n_node; ++si) {
+            double t = target[indices[si]];
+            if (t < t_min) t_min = t;
+            if (t > t_max) t_max = t;
+        }
+        double t_range = t_max - t_min;
+        if (t_range < 1e-10) return best;  // constant target — no gain possible
+
+        // Precompute tbin_total (independent of feature)
+        std::vector<int> tbin_total(n_tbins, 0);
+        for (int si = 0; si < n_node; ++si) {
+            double t = target[indices[si]];
+            int tb = static_cast<int>((t - t_min) / t_range * n_tbins);
+            if (tb >= n_tbins) tb = n_tbins - 1;
+            tbin_total[tb]++;
+        }
+        double parent_mae = mae_from_bins(tbin_total, n_node, n_tbins);
+
+        // 3D histogram: bin_tbin_cnt[fi][b][tb] stored flat as
+        //   fi * nb_max * n_tbins + b * n_tbins + tb
+        std::vector<int> bin_tbin_cnt(d_cont * nb_max * n_tbins, 0);
+        std::vector<int> bin_cnt(d_cont * nb_max, 0);
+
+        // ── Stage A: scatter ─────────────────────────────────────────────────
+        for (int si = 0; si < n_node; ++si) {
+            const int idx = indices[si];
+            double t = target[idx];
+            int tb = static_cast<int>((t - t_min) / t_range * n_tbins);
+            if (tb >= n_tbins) tb = n_tbins - 1;
+            const uint8_t* row = X_binned.data() + (ptrdiff_t)idx * stride;
+            for (int fi = 0; fi < d_cont; ++fi) {
+                const int b = static_cast<int>(row[fi]);
+                bin_tbin_cnt[fi * nb_max * n_tbins + b * n_tbins + tb]++;
+                bin_cnt[fi * nb_max + b]++;
+            }
+        }
+
+        // ── Stage B: prefix scan per feature ─────────────────────────────────
+        for (int fi = 0; fi < d_cont; ++fi) {
+            const int nb = static_cast<int>(bin_edges[fi].size()) - 1;
+            if (nb <= 0) continue;
+
+            std::vector<int> tbin_left(n_tbins, 0);
+            int cum_cnt = 0;
+            for (int b = 0; b < nb - 1; ++b) {
+                // Accumulate bin b into left group
+                const int base_tb = fi * nb_max * n_tbins + b * n_tbins;
+                for (int tb = 0; tb < n_tbins; ++tb)
+                    tbin_left[tb] += bin_tbin_cnt[base_tb + tb];
+                cum_cnt += bin_cnt[fi * nb_max + b];
+
+                if (cum_cnt < min_samples_leaf || (n_node - cum_cnt) < min_samples_leaf) continue;
+
+                const double g = mae_gain(tbin_left, tbin_total, cum_cnt, n_node,
+                                          n_tbins, parent_mae);
+                if (g > best.gain) {
+                    best.valid     = true;
+                    best.gain      = g;
+                    best.feature   = cont_cols[fi];
+                    best.bin       = b;
+                    best.threshold = bin_edges[fi][b + 1];
+                    best.is_binary = false;
+                }
+            }
+        }
+        return best;
+    }
+
+    // ── Variance criterion (default) ──────────────────────────────────────────
     // Flat histogram storage: feature fi, bin b → index fi * nb_max + b.
     std::vector<double> bin_sum(d_cont * nb_max, 0.0);
     std::vector<double> bin_sum_sq(d_cont * nb_max, 0.0);
     std::vector<int>    bin_cnt(d_cont * nb_max, 0);
 
     double sum_p = 0.0, sum_sq_p = 0.0;
-    const int stride = static_cast<int>(X_binned.cols()); // == d_cont (RowMajor)
 
     // ── Stage A: transposed scatter ──────────────────────────────────────────
 #ifdef _OPENMP
@@ -181,7 +313,8 @@ PartitionTree::SplitResult PartitionTree::evaluate_binary_splits(
     const std::vector<int>& indices,
     const Eigen::MatrixXd& X_z,
     const std::vector<int>& binary_cols,
-    const Eigen::VectorXd& target) const
+    const Eigen::VectorXd& target,
+    const HVRTConfig& cfg) const
 {
     const int n_node = static_cast<int>(indices.size());
     SplitResult best;
@@ -190,6 +323,35 @@ PartitionTree::SplitResult PartitionTree::evaluate_binary_splits(
 
     if (binary_cols.empty()) return best;
 
+    // ── AbsoluteError criterion: exact MAE ────────────────────────────────────
+    if (cfg.split_criterion == SplitCriterion::AbsoluteError) {
+        std::vector<double> parent_vals;
+        parent_vals.reserve(n_node);
+        for (int idx : indices) parent_vals.push_back(target[idx]);
+        double parent_mae = exact_total_mae(parent_vals);
+
+        for (int fc : binary_cols) {
+            std::vector<double> left_vals, right_vals;
+            left_vals.reserve(n_node);
+            right_vals.reserve(n_node);
+            for (int idx : indices) {
+                if (X_z(idx, fc) <= 0.0) left_vals.push_back(target[idx]);
+                else                       right_vals.push_back(target[idx]);
+            }
+            if (left_vals.empty() || right_vals.empty()) continue;
+            double g = parent_mae - exact_total_mae(left_vals) - exact_total_mae(right_vals);
+            if (g > best.gain) {
+                best.valid     = true;
+                best.gain      = g;
+                best.feature   = fc;
+                best.threshold = 0.0;
+                best.is_binary = true;
+            }
+        }
+        return best;
+    }
+
+    // ── Variance criterion (default) ──────────────────────────────────────────
     double sum_p = 0.0, sum_sq_p = 0.0;
     for (int idx : indices) {
         double t = target[idx];
@@ -330,9 +492,9 @@ Eigen::VectorXi PartitionTree::build(
 
         // Evaluate both streams
         SplitResult cont_split = evaluate_continuous_splits(
-            indices, X_binned, cont_cols, target, bin_edges, cfg.n_bins, msl);
+            indices, X_binned, cont_cols, target, bin_edges, cfg.n_bins, msl, cfg);
         SplitResult bin_split = evaluate_binary_splits(
-            indices, X_z, binary_cols, target);
+            indices, X_z, binary_cols, target, cfg);
 
         // Choose best
         SplitResult chosen;

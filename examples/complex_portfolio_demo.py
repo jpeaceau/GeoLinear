@@ -1,6 +1,6 @@
 """
-Complex Portfolio Demo -- GeoLinear vs GLM
-==========================================
+Complex Portfolio Demo -- GeoLinear (PyramidHART) vs GLM
+=========================================================
 A synthetic portfolio designed to be genuinely hard for a global linear model.
 Complexity sources:
 
@@ -19,6 +19,16 @@ Complexity sources:
 
 The engineered GLM gets explicit polynomial and interaction terms to give it
 every fair advantage before comparing to GeoLinear.
+
+Architecture note (pyramid_hart default):
+  GeoLinear partitions the policyholder space using PyramidHART cooperative
+  geometry (A-statistic + MAD whitening + AbsoluteError splits), then fits a
+  separate Ridge linear model within each partition.  The end result is a
+  collection of ordinary linear models -- one per risk regime -- each with
+  fully interpretable coefficients suitable for actuarial review.
+
+  No manual feature engineering is required: the regime boundaries (and the
+  relevant feature interactions within each regime) are discovered automatically.
 
 Requirements: pip install geolinear[examples]   (xgboost + optuna)
 """
@@ -256,7 +266,10 @@ print(f"  know which interactions to add.  GeoLinear discovers them.")
 # =============================================================================
 # 3. GeoLinear -- default hyperparameters (raw features)
 # =============================================================================
-section("3. GeoLinear -- Default Hyperparameters (raw features)")
+section("3. GeoLinear -- Default Hyperparameters (pyramid_hart, raw features)")
+print("  Each model uses PyramidHART cooperative geometry partitions +")
+print("  a separate Ridge linear model per partition (no feature engineering).")
+print()
 
 # Standardise once for GeoLinear
 scaler = StandardScaler().fit(X_tr)
@@ -405,6 +418,13 @@ print("  * Sports x age sign-flip (regime-conditional coefficient)")
 print("  * Three-way extreme risk (occ x night x young -- no polynomial captures this)")
 print("  * Telematics-modulated incident loading (inc x telem interaction)")
 print()
-print("  GeoLinear discovers all of these from geometry alone,")
+print("  GeoLinear (pyramid_hart) discovers all of these from geometry alone,")
 print("  with no manual feature engineering.")
+print()
+print("  Actuarial readiness:")
+print("  * End result = collection of Ridge linear models (one per risk regime)")
+print("  * Each partition's coef_ = relativities for that cooperative risk group")
+print("  * PyramidHART's MAD whitening + AbsoluteError splits align with")
+print("    heavy-tailed claims data and the actuarial MAE objective")
+print("  * Compressible to a single OLS meta-GLM for regulatory filing")
 print()
