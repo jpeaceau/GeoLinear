@@ -341,3 +341,90 @@ class TestPyramidHART:
         model = GeoLinear(n_rounds=3, hvrt_model="pyramid_hart")
         cloned = clone(model)
         assert cloned.hvrt_model == "pyramid_hart"
+
+
+# ── Latent signal amplification ───────────────────────────────────────────────
+
+class TestLatentAmplification:
+    @pytest.fixture(scope="class")
+    def small_data(self):
+        rng = np.random.default_rng(42)
+        X = rng.standard_normal((300, 6))
+        Z = (X - X.mean(0)) / X.std(0)
+        S = Z.sum(axis=1)
+        Q = (Z ** 2).sum(axis=1)
+        T = S ** 2 - Q
+        y = 3.0 * np.sign(T) * X[:, 0] + rng.standard_normal(300) * 0.5
+        return X, y
+
+    def test_coop_weights_fits_and_predicts(self, small_data):
+        X, y = small_data
+        model = GeoLinear(n_rounds=5, use_coop_weights=True, random_state=0)
+        model.fit(X, y)
+        pred = model.predict(X)
+        assert pred.shape == (len(y),)
+
+    def test_t_feature_fits_and_predicts(self, small_data):
+        X, y = small_data
+        model = GeoLinear(n_rounds=5, use_t_feature=True, random_state=0)
+        model.fit(X, y)
+        pred = model.predict(X)
+        assert pred.shape == (len(y),)
+
+    def test_both_combined(self, small_data):
+        X, y = small_data
+        model = GeoLinear(n_rounds=5, use_coop_weights=True, use_t_feature=True, random_state=0)
+        model.fit(X, y)
+        pred = model.predict(X)
+        assert pred.shape == (len(y),)
+
+    def test_coop_weights_r2_positive(self, small_data):
+        X, y = small_data
+        model = GeoLinear(n_rounds=10, use_coop_weights=True, random_state=0)
+        model.fit(X, y)
+        r2 = model.score(X, y)
+        assert r2 > 0.0, f"use_coop_weights R²={r2:.3f} not positive"
+
+    def test_t_feature_r2_vs_baseline(self, small_data):
+        """use_t_feature R² should be within 0.02 of baseline (may improve or be neutral)."""
+        X, y = small_data
+        baseline = GeoLinear(n_rounds=10, random_state=0)
+        baseline.fit(X, y)
+        r2_base = baseline.score(X, y)
+
+        model = GeoLinear(n_rounds=10, use_t_feature=True, random_state=0)
+        model.fit(X, y)
+        r2_new = model.score(X, y)
+
+        assert r2_new >= r2_base - 0.02, (
+            f"use_t_feature R²={r2_new:.3f} dropped more than 0.02 below baseline {r2_base:.3f}"
+        )
+
+    def test_sklearn_compat(self):
+        from sklearn.base import clone
+        model = GeoLinear(n_rounds=3, use_coop_weights=True, use_t_feature=True)
+        cloned = clone(model)
+        assert cloned.use_coop_weights is True
+        assert cloned.use_t_feature is True
+        params = model.get_params()
+        assert params["use_coop_weights"] is True
+        assert params["use_t_feature"] is True
+        model.set_params(use_coop_weights=False)
+        assert model.use_coop_weights is False
+
+    def test_feature_importances_with_t_feature(self, small_data):
+        """feature_importances should not error and return shape (n_features,) even with use_t_feature."""
+        X, y = small_data
+        model = GeoLinear(n_rounds=5, use_t_feature=True, random_state=0)
+        model.fit(X, y)
+        imp, names = model.feature_importances()
+        assert imp.shape == (X.shape[1],)
+        assert (imp >= 0).all()
+
+    def test_classifier_coop_weights(self):
+        X, y = make_classification(n_samples=200, n_features=5, random_state=1)
+        clf = GeoLinearClassifier(n_rounds=5, use_coop_weights=True, random_state=0)
+        clf.fit(X, y)
+        proba = clf.predict_proba(X)
+        assert proba.shape == (len(y), 2)
+        assert (proba >= 0).all() and (proba <= 1).all()

@@ -125,13 +125,15 @@ from sklearn.model_selection import cross_val_score
 
 def objective(trial):
     model = GeoLinear(
-        n_rounds=trial.suggest_int("n_rounds", 10, 60),
+        n_rounds=trial.suggest_int("n_rounds", 10, 100),
         learning_rate=trial.suggest_float("learning_rate", 0.01, 0.3, log=True),
         alpha=trial.suggest_float("alpha", 0.01, 20.0, log=True),
-        y_weight=trial.suggest_float("y_weight", 0.3, 1.0),
-        base_learner=trial.suggest_categorical("base_learner", ["ridge", "ols", "lasso"]),
-        hvrt_n_partitions=trial.suggest_int("hvrt_n_partitions", 4, 12),
-        min_samples_partition=trial.suggest_int("min_samples_partition", 5, 20),
+        y_weight=trial.suggest_float("y_weight", 0.1, 1.0),
+        base_learner=trial.suggest_categorical("base_learner", ["ridge", "lasso"]),
+        hvrt_n_partitions=trial.suggest_int("hvrt_n_partitions", 3, 14),
+        min_samples_partition=trial.suggest_int("min_samples_partition", 3, 25),
+        hvrt_model=trial.suggest_categorical("hvrt_model", ["hvrt", "pyramid_hart", "fast_hvrt"]),
+        use_t_feature=trial.suggest_categorical("use_t_feature", [False, True]),
         refit_interval=trial.suggest_categorical("refit_interval", [0, 1, 2]),
     )
     return cross_val_score(model, X_tr, y_tr, cv=5, scoring="r2").mean()
@@ -167,21 +169,25 @@ entity, use AutoITE.
 
 ## Benchmark results
 
-60-trial Optuna HPO, GeoLinear vs XGBoost.
+80-trial Optuna HPO, GeoLinear (v0.3.0) vs XGBoost. `use_t_feature` included in GeoLinear's
+HPO search space so the optimizer can exploit cooperative geometry when it exists.
 
-### Regression R²
+### Regression R² — v0.3.0 (80-trial HPO)
 
-| DGP | GL-HPO | XGB-HPO | Gap |
-|-----|--------|---------|-----|
-| T-regime (regime-switching) | 0.331 | 0.336 | −0.005 (tie) |
-| 3-regime | 0.387 | 0.464 | −0.077 |
-| Friedman1 | 0.948 | 0.963 | −0.015 |
-| **Linear** | **0.971** | 0.954 | **+0.017 (GL wins)** |
-| CalHousing | 0.689 | 0.818 | −0.129 |
-| CalHousing + log transform | 0.725 | 0.818 | −0.093 |
+| DGP | GL-HPO | `use_t` | XGB-HPO | Gap |
+|-----|--------|---------|---------|-----|
+| **T-regime** | **0.569** | ✓ | 0.296 | **+0.273 GL wins** |
+| **3-regime** | **0.358** | ✓ | 0.329 | **+0.029 GL wins** |
+| Friedman1 | 0.984 | — | 0.988 | −0.003 (tie) |
+| **Linear** | **0.965** | — | 0.957 | **+0.008 GL wins** |
+| CalHousing | 0.584 | ✓ | 0.856 | −0.271 XGB wins |
 
-GL is competitive with XGBoost on regime-switching and linear DGPs and wins on
-purely linear relationships. The gap on CalHousing narrows with feature engineering.
+**Score: 3 wins · 1 tie · 1 loss.**
+
+`use_t_feature` is selected by HPO whenever the data has cooperative structure (T-regime,
+3-regime). On smooth or axis-aligned DGPs (Friedman1, Linear) HPO correctly opts out.
+CalHousing remains XGBoost territory: spatial autocorrelation and threshold effects are
+better captured by axis-aligned splits than by pairwise cooperative geometry.
 
 ### Classification AUC
 
@@ -211,6 +217,8 @@ Default-parameter GL-Ridge matches XGBoost-HPO on BreastCancer (AUC 0.993 each).
 | `hvrt_inner_rounds` | int | 1 | HVRT T-residual inner rounds per stage |
 | `partition_inner_rounds` | int | 1 | Base-learner rounds within each partition |
 | `refit_interval` | int | 0 | 0 = fresh HVRT each round; k>0 = refit every k rounds (faster) |
+| `use_t_feature` | bool | False | Append per-sample T-statistic (S²−Q) as an extra linear feature |
+| `use_coop_weights` | bool | False | Scale features by \|corr(z_k, S−z_k)\|² before linear fit |
 | `random_state` | int | 42 | Seed (incremented per round for diverse partitionings) |
 
 `GeoLinearClassifier` accepts the same parameters.

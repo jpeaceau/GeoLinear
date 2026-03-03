@@ -15,7 +15,7 @@ augment_TSQ         Append cooperative statistics T, S, Q to any feature matrix.
 from geolinear.regressor import GeoLinear, GeoLinearClassifier
 from geolinear.augment   import augment_TSQ, TSQTransformer
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 __all__ = [
     "GeoLinear",

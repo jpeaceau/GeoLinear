@@ -113,6 +113,8 @@ class GeoLinear(BaseEstimator, RegressorMixin):
         partition_inner_rounds: int   = 1,
         refit_interval:         int   = 0,
         hvrt_model:             str   = "pyramid_hart",
+        use_coop_weights:       bool  = False,
+        use_t_feature:          bool  = False,
         random_state:           int   = 42,
     ):
         self.n_rounds               = n_rounds
@@ -127,6 +129,8 @@ class GeoLinear(BaseEstimator, RegressorMixin):
         self.partition_inner_rounds = partition_inner_rounds
         self.refit_interval         = refit_interval
         self.hvrt_model             = hvrt_model
+        self.use_coop_weights       = use_coop_weights
+        self.use_t_feature          = use_t_feature
         self.random_state           = random_state
 
     # ── Internal ──────────────────────────────────────────────────────────────
@@ -145,6 +149,8 @@ class GeoLinear(BaseEstimator, RegressorMixin):
         cfg.partition_inner_rounds = int(self.partition_inner_rounds)
         cfg.refit_interval         = int(self.refit_interval)
         cfg.hvrt_model             = str(self.hvrt_model)
+        cfg.use_coop_weights       = bool(self.use_coop_weights)
+        cfg.use_t_feature          = bool(self.use_t_feature)
         cfg.random_state           = int(self.random_state)
         return cfg
 
@@ -228,7 +234,7 @@ class GeoLinear(BaseEstimator, RegressorMixin):
         for _, partition_models in self.stages_:
             for ridge in partition_models.values():
                 w = float(ridge.n_samples_)
-                weighted_sum += w * np.abs(ridge.coef_)
+                weighted_sum += w * np.abs(ridge.coef_[:d])
                 total_weight += w
 
         importances = weighted_sum / max(total_weight, 1.0)
@@ -290,6 +296,8 @@ class GeoLinearClassifier(BaseEstimator, ClassifierMixin):
         partition_inner_rounds: int   = 1,
         refit_interval:         int   = 0,
         hvrt_model:             str   = "pyramid_hart",
+        use_coop_weights:       bool  = False,
+        use_t_feature:          bool  = False,
         random_state:           int   = 42,
     ):
         self.n_rounds               = n_rounds
@@ -304,6 +312,8 @@ class GeoLinearClassifier(BaseEstimator, ClassifierMixin):
         self.partition_inner_rounds = partition_inner_rounds
         self.refit_interval         = refit_interval
         self.hvrt_model             = hvrt_model
+        self.use_coop_weights       = use_coop_weights
+        self.use_t_feature          = use_t_feature
         self.random_state           = random_state
 
     def _make_config(self) -> GeoLinearConfig:
@@ -320,6 +330,8 @@ class GeoLinearClassifier(BaseEstimator, ClassifierMixin):
         cfg.partition_inner_rounds = int(self.partition_inner_rounds)
         cfg.refit_interval         = int(self.refit_interval)
         cfg.hvrt_model             = str(self.hvrt_model)
+        cfg.use_coop_weights       = bool(self.use_coop_weights)
+        cfg.use_t_feature          = bool(self.use_t_feature)
         cfg.random_state           = int(self.random_state)
         return cfg
 

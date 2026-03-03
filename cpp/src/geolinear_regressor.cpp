@@ -370,6 +370,56 @@ void GeoLinearBase::fit_boosting(const Eigen::MatrixXd& X, const Eigen::VectorXd
         stage.n_parts    = std::move(n_parts_per_tree);
         std::map<int, int> psizes;
 
+        // ── Latent-signal feature transforms ──────────────────────────────────
+        const bool any_transform = cfg_.use_coop_weights || cfg_.use_t_feature;
+        Eigen::MatrixXd X_fit;
+
+        if (any_transform) {
+            const Eigen::MatrixXd& Xz = stage.hvrt_trees[0]->X_z();
+            const int D = static_cast<int>(Xz.cols());
+            Eigen::VectorXd S_vec = Xz.rowwise().sum();
+
+            X_fit = X;
+
+            if (cfg_.use_coop_weights) {
+                Eigen::VectorXd fw(D);
+                for (int k = 0; k < D; ++k) {
+                    Eigen::VectorXd S_mk  = S_vec - Xz.col(k);
+                    Eigen::VectorXd dk    = Xz.col(k).array() - Xz.col(k).mean();
+                    Eigen::VectorXd dsmk  = S_mk.array() - S_mk.mean();
+                    double cov    = dk.dot(dsmk) / n;
+                    double std_k  = std::sqrt(dk.squaredNorm() / n) + 1e-8;
+                    double std_mk = std::sqrt(dsmk.squaredNorm() / n) + 1e-8;
+                    double corr   = cov / (std_k * std_mk);
+                    fw(k) = corr * corr;
+                }
+                double max_w = fw.maxCoeff();
+                if (max_w > 0)
+                    fw = (fw / max_w).array() + 0.1;
+                else
+                    fw = Eigen::VectorXd::Constant(D, 1.0);
+                X_fit = X.array().rowwise() * fw.transpose().array();
+                stage.feat_weights = std::move(fw);
+            }
+
+            if (cfg_.use_t_feature) {
+                Eigen::VectorXd Q_vec = Xz.rowwise().squaredNorm();
+                Eigen::VectorXd t_raw = S_vec.array().square() - Q_vec.array();
+                double tm = t_raw.mean();
+                double ts = std::sqrt((t_raw.array() - tm).square().mean()) + 1e-8;
+                stage.t_mean = tm;
+                stage.t_std  = ts;
+                Eigen::VectorXd t_norm = (t_raw.array() - tm) / ts;
+
+                Eigen::MatrixXd X_aug(n, X_fit.cols() + 1);
+                X_aug.leftCols(X_fit.cols()) = X_fit;
+                X_aug.col(X_fit.cols()) = t_norm;
+                X_fit = std::move(X_aug);
+            }
+        }
+
+        const Eigen::MatrixXd& X_ref = any_transform ? X_fit : X;
+
         for (int pid : upids) {
             std::vector<int> idx;
             idx.reserve(n / static_cast<int>(upids.size()) + 1);
@@ -381,18 +431,18 @@ void GeoLinearBase::fit_boosting(const Eigen::MatrixXd& X, const Eigen::VectorXd
 
             if (np < cfg_.min_samples_partition) {
                 RidgeModel m;
-                m.coef      = Eigen::VectorXd::Zero(X.cols());
+                m.coef      = Eigen::VectorXd::Zero(X_ref.cols());
                 m.intercept = 0.0;
                 m.fallback  = true;
                 stage.models[pid] = std::move(m);
                 continue;
             }
 
-            Eigen::MatrixXd X_p(np, X.cols());
+            Eigen::MatrixXd X_p(np, X_ref.cols());
             Eigen::VectorXd g_p(np);
             Eigen::VectorXd w_p(np);
             for (int k = 0; k < np; ++k) {
-                X_p.row(k) = X.row(idx[k]);
+                X_p.row(k) = X_ref.row(idx[k]);
                 g_p[k]     = g[idx[k]];
                 w_p[k]     = w[idx[k]];
             }
@@ -404,7 +454,7 @@ void GeoLinearBase::fit_boosting(const Eigen::MatrixXd& X, const Eigen::VectorXd
             // For Ridge/Lasso: each round corrects residual regularisation bias.
             {
                 RidgeModel acc;
-                acc.coef      = Eigen::VectorXd::Zero(X.cols());
+                acc.coef      = Eigen::VectorXd::Zero(X_ref.cols());
                 acc.intercept = 0.0;
                 acc.fallback  = false;
 
@@ -427,7 +477,7 @@ void GeoLinearBase::fit_boosting(const Eigen::MatrixXd& X, const Eigen::VectorXd
         for (int i = 0; i < n; ++i) {
             auto it = stage.models.find(combo_pids[i]);
             pred[i] = (it != stage.models.end())
-                       ? it->second.predict_one(X.row(i))
+                       ? it->second.predict_one(X_ref.row(i))
                        : 0.0;
         }
 
@@ -448,12 +498,36 @@ Eigen::VectorXd GeoLinearBase::predict_raw(const Eigen::MatrixXd& X) const {
     const int n = static_cast<int>(X.rows());
     Eigen::VectorXd F = Eigen::VectorXd::Constant(n, F0_);
 
+    const bool any_transform = cfg_.use_coop_weights || cfg_.use_t_feature;
+
     for (const Stage& stage : stages_) {
         Eigen::VectorXi pids = apply_combo_stage(stage, X);
+
+        Eigen::MatrixXd X_fit;
+        if (any_transform) {
+            Eigen::MatrixXd X_cur = X;
+            if (cfg_.use_coop_weights && stage.feat_weights.size() > 0)
+                X_cur = X.array().rowwise() * stage.feat_weights.transpose().array();
+            if (cfg_.use_t_feature) {
+                Eigen::MatrixXd Xz = stage.hvrt_trees[0]->to_z(X);
+                Eigen::VectorXd S  = Xz.rowwise().sum();
+                Eigen::VectorXd Q  = Xz.rowwise().squaredNorm();
+                Eigen::VectorXd t  = ((S.array().square() - Q.array()) - stage.t_mean) / stage.t_std;
+                Eigen::MatrixXd X_aug(n, X_cur.cols() + 1);
+                X_aug.leftCols(X_cur.cols()) = X_cur;
+                X_aug.col(X_cur.cols()) = t;
+                X_fit = std::move(X_aug);
+            } else {
+                X_fit = std::move(X_cur);
+            }
+        }
+
+        const Eigen::MatrixXd& X_use = any_transform ? X_fit : X;
+
         for (int i = 0; i < n; ++i) {
             auto it = stage.models.find(pids[i]);
             if (it != stage.models.end())
-                F[i] += cfg_.learning_rate * it->second.predict_one(X.row(i));
+                F[i] += cfg_.learning_rate * it->second.predict_one(X_use.row(i));
         }
     }
 

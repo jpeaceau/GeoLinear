@@ -24,6 +24,8 @@ PYBIND11_MODULE(_geolinear_cpp, m) {
         .def_readwrite("partition_inner_rounds",  &GeoLinearConfig::partition_inner_rounds)
         .def_readwrite("refit_interval",         &GeoLinearConfig::refit_interval)
         .def_readwrite("hvrt_model",             &GeoLinearConfig::hvrt_model)
+        .def_readwrite("use_coop_weights",       &GeoLinearConfig::use_coop_weights)
+        .def_readwrite("use_t_feature",          &GeoLinearConfig::use_t_feature)
         .def_readwrite("random_state",          &GeoLinearConfig::random_state)
         .def("__repr__", [](const GeoLinearConfig& c) {
             return "<GeoLinearConfig n_rounds=" + std::to_string(c.n_rounds) +

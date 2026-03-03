@@ -42,6 +42,12 @@ struct GeoLinearConfig {
     // Controls geometry_mode, whitening_mode, and split_criterion of the HVRT partitioner.
     std::string hvrt_model         = "hvrt";
 
+    // Latent signal amplification
+    // use_coop_weights: scale each feature by |corr(z_k, S−z_k)|² before per-partition linear fit
+    bool use_coop_weights          = false;
+    // use_t_feature: append per-sample T statistic (S²−Q) as an extra linear feature
+    bool use_t_feature             = false;
+
     // Misc
     int    random_state            = 42;
 };

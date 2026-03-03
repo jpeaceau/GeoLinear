@@ -36,6 +36,10 @@ struct Stage {
     std::vector<std::shared_ptr<hvrt::HVRT>> hvrt_trees;
     std::vector<int>                          n_parts;
     std::map<int, RidgeModel>                models;
+    // Latent amplification (empty / zero when feature disabled)
+    Eigen::VectorXd                           feat_weights;  // (d,) coop weights
+    double                                    t_mean = 0.0;
+    double                                    t_std  = 1.0;
 };
 
 // ── GeoLinearBase ─────────────────────────────────────────────────────────────
